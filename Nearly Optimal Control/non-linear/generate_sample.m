@@ -1,10 +1,11 @@
-function [ X,u ] = generate_sample( start, tspan )
+function [ X,u ] = generate_sample( start, tspan,u_func )
 %GENERATE_SAMPLE Summary of this function goes here
 %   Detailed explanation goes here
-[t,X] = ode45(@(t,y)ode_fun(t,y),[tspan],start);
+
+[t,X] = ode45(@(t,y)ode_fun(t,y,@(x1,x2)u_func(x1,x2)),[tspan],start);
 u = zeros(size(tspan));
 for i=1:length(tspan)
-    u(i) = u_nonlinear(X(i,1),X(i,2));
+    u(i) = u_func(X(i,1),X(i,2));
 end
 
 end
