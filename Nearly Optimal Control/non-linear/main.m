@@ -10,7 +10,7 @@ uF = matlabFunction(-(weights*mono));
 
 x = [0;1];
 
-t = 0:0.01:90;
+t = 0:0.01:69;
 
 
 [X,u] = generate_sample([x(1);x(2)],t,@(x1,x2)uF(x1,x2));
@@ -39,8 +39,8 @@ eta = lsqnonlin(Dynamics,zeros(size(h)))
 
 %%
 control_law = @(x1,x2)(eta'*hf(x1,x2));
-x = [-0,-1]
-t2 = [0:0.01:90];
+x = [-0,1]
+t2 = [0:0.01:69];
 [Xcomputed,ucomputed] = generate_sample([x(1);x(2)],t2,@(x1,x2)control_law(x1,x2));
 
 
@@ -80,18 +80,29 @@ V = sosgetsol(prog,V)
 
 
 %% Formulate Control from CLF
-% Assume sigma(x) = sqrt((Vx*(f(x)))^2 + Vx*g(x)'*R*Vx*g(x))
+% Assume sigma(x) = sqrt((Vx*(f(x)))^2 + Vx*g(x)'*R^(-1)*Vx*g(x))
 Vx = gradient(V,[x1;x2]);
  f = [x1 + x2 - x1*(x1^2 + x2^2);
      -x1 + x2 - x2*(x1^2 + x2^2)];
  g = [0;1]
-phi = -(Vx'*f + sqrt((Vx'*f)^2 + (Vx'*g*control_law(x1,x2))^2))/(Vx'*g);
+ LfV = Vx'*f;
+ Lfg = Vx'*g;
+ sigma = sqrt((LfV)^2 + (Lfg)^2);
+phi = simplify(-(LfV + sigma)/(Lfg));
 phi_fun = matlabFunction(phi)
 
 %%
 x = [0;1];
-t2 = [0:0.01:90];
+t2 = [0:0.001:69];
+% XcomputedPhi = zeros([2,length(t2)]);
+% ucomputedPhi = zeros([2,length(t2)]);
+% ucomputedPhi(:,1) = phi_fun(XcomputedPhi(1,i),XcomputedPhi(2,i));
+% for i=2:length(t2)
+%     XcomputedPhi(:,i) = ode_fun(t,XcomputedPhi(:,i-1),@(x1,x2)phi_fun(x1,x2));
+%     ucomputedPhi(:,i) = phi_fun(XcomputedPhi(1,i),XcomputedPhi(2,i));
+% end
 [XcomputedPhi,ucomputedPhi] = generate_sample([x(1);x(2)],t2,@(x1,x2)phi_fun(x1,x2));
+%%
 close all
 figure;
 plot(t,u)
