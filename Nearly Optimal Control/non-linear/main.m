@@ -10,10 +10,10 @@ uF = matlabFunction(-(weights*mono));
 
 x = [0;1];
 
-t = 0:0.01:69;
+t = 0:0.01:60;
 
 
-[X,u] = generate_sample([x(1);x(2)],t,@(x1,x2)uF(x1,x2));
+[X,u] = generate_sample([x(1);x(2)],t,@(x1,x2)uF(x1,x2),0.0);
 
 
 %%
@@ -39,17 +39,20 @@ eta = lsqnonlin(Dynamics,zeros(size(h)))
 
 %%
 control_law = @(x1,x2)(eta'*hf(x1,x2));
-x = [-0,1]
-t2 = [0:0.01:69];
-[Xcomputed,ucomputed] = generate_sample([x(1);x(2)],t2,@(x1,x2)control_law(x1,x2));
+x = [0,1]
+t2 = [0:0.01:60];
+[Xcomputed,ucomputed] = generate_sample([x(1);x(2)],t2,@(x1,x2)control_law(x1,x2),0.0);
 
 
 %% Compute Lyapunov Control
 syms x1 x2 real
 vars = [x1;x2];
 % Constructing the vector field dx/dt = f
-Dynamics = [x1 + x2 - x1*(x1^2 + x2^2);
-     -x1 + x2 - x2*(x1^2 + x2^2) + control_law(x1,x2)];
+f = [x1 + x2 - x1*(x1^2 + x2^2);
+     -x1 + x2 - x2*(x1^2 + x2^2)];
+ 
+g = [0;1];
+Dynamics = f  + g* control_law(x1,x2);
 
 % =============================================
 % First, initialize the sum of squares program
@@ -67,7 +70,7 @@ mons = monomials([x1,x2],[1:8])
 prog = sosineq(prog,V);
 
 % Constraint 2: (dV/dx)'*(f(x) + g(x)*u) <= 0
-expr = -(gradient(V,[x1;x2])'*Dynamics+gradient(V,[x1;x2])'*Dynamics);
+expr = -(gradient(V,[x1;x2])'*f+gradient(V,[x1;x2])'*g*control_law(x1,x2));
 prog = sosineq(prog,expr);
 
 % =============================================
@@ -85,15 +88,16 @@ Vx = gradient(V,[x1;x2]);
  f = [x1 + x2 - x1*(x1^2 + x2^2);
      -x1 + x2 - x2*(x1^2 + x2^2)];
  g = [0;1]
+ q = [x1,x2]*eye(2)*[x1;x2];
  LfV = Vx'*f;
- Lfg = Vx'*g;
- sigma = sqrt((LfV)^2 + (Lfg)^2);
-phi = simplify(-(LfV + sigma)/(Lfg));
+ LgV = Vx'*g;
+ sigma = sqrt((LfV)^2 + q*(LgV)^2);
+phi = simplify(-(LfV + sigma)/(LgV));
 phi_fun = matlabFunction(phi)
 
 %%
-x = [0;1];
-t2 = [0:0.001:69];
+x = [0,1];
+t2 = [0:0.01:60];
 % XcomputedPhi = zeros([2,length(t2)]);
 % ucomputedPhi = zeros([2,length(t2)]);
 % ucomputedPhi(:,1) = phi_fun(XcomputedPhi(1,i),XcomputedPhi(2,i));
@@ -101,7 +105,7 @@ t2 = [0:0.001:69];
 %     XcomputedPhi(:,i) = ode_fun(t,XcomputedPhi(:,i-1),@(x1,x2)phi_fun(x1,x2));
 %     ucomputedPhi(:,i) = phi_fun(XcomputedPhi(1,i),XcomputedPhi(2,i));
 % end
-[XcomputedPhi,ucomputedPhi] = generate_sample([x(1);x(2)],t2,@(x1,x2)phi_fun(x1,x2));
+[XcomputedPhi,ucomputedPhi] = generate_sample([x(1);x(2)],t2,@(x1,x2)phi_fun(x1,x2),0.0);
 %%
 close all
 figure;
@@ -121,16 +125,34 @@ legend('x1 expert','x2 expert','x1 estimated','x2 estimated','x1 computed from L
 
 %% compute sigma such that inf (Vx*(f(x)+g(x)*u) <= sigma(x)
 sigma = -Vx'*f - Vx'*g;
-l1 = (sigma - (Vx'*f))^2*(Vx'*g)^2
+l1 = (sigma - (Vx'*f))^2*(Vx'*g)^2;
 l1_fun = matlabFunction(l1)
 
-l1Demonstrated = l1_fun(X(:,1),X(:,2))
-l1Estimated = l1_fun(Xcomputed(:,1),Xcomputed(:,2))
-l1ComputedPhi = l1_fun(XcomputedPhi(:,1),XcomputedPhi(:,2))
+l1Demonstrated = l1_fun(X(:,1),X(:,2));
+l1Demonstrated = l1Demonstrated' + u.^2;
+l1Estimated = l1_fun(Xcomputed(:,1),Xcomputed(:,2));
+l1Estimated = l1Estimated' + ucomputed.^2;
+l1ComputedPhi = l1_fun(XcomputedPhi(:,1),XcomputedPhi(:,2));
+l1ComputedPhi = l1ComputedPhi'+ ucomputedPhi.^2;
+JDemonstrated = ones([1,length(X)])*l1Demonstrated(1);
+JEstimated = ones([1,length(Xcomputed)])*l1Estimated(1);
+JComputedPhi = ones([1,length(XcomputedPhi)])*l1ComputedPhi(1);
+for i=2:length(X)
+    JDemonstrated(i) = JDemonstrated(i-1)+l1Demonstrated(i);
+    JEstimated(i) = JEstimated(i-1)+l1Estimated(i);
+    JComputedPhi(i) = JComputedPhi(i-1)+l1ComputedPhi(i);
+end
 %%
 figure
 semilogy(t,l1Demonstrated)
 hold on
 semilogy(t2,l1Estimated,'-.')
 semilogy(t2,l1ComputedPhi,'--')
+grid on
+
+figure
+semilogx(t,JDemonstrated)
+hold on
+semilogx(t2,JEstimated,'-.')
+semilogx(t2,JComputedPhi,'--')
 grid on
